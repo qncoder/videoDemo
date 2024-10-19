@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Jessica sei demo</title>
+    <link rel="stylesheet" href="./demo.css">
+    <script src="./vconsole.js"></script>
+    <script src="./js/jessibuca-pro.js"></script>
+    <style>
+        .container-shell:before {
+            content: "jessibuca sei demo";
+        }
+    </style>
+</head>
+
+<body class="page">
+    <div class="root">
+        <div class="container-shell">
+            <div id="container"></div>
+            <div class="input">
+                <div>
+                    当前浏览器：
+                    <span id="mseSupport264" style="color: green;display: none">支持MSE H264解码；</span>
+                    <span id="mseSupport" style="color: green;display: none">支持MSE H265解码；</span>
+                    <span id="mseNotSupport264" style="color: red;display: none">不支持MSE H264解码；</span>
+                    <span id="mseNotSupport" style="color: red;display: none">不支持MSE H265解码,会自动切换成wasm解码；</span>
+                </div>
+            </div>
+            <div class="input">
+                <div>
+                    当前浏览器：
+                    <span id="wcsSupport264" style="color: green;display: none">支持Webcodecs H264解码；</span>
+                    <span id="wcsSupport" style="color: green;display: none">支持Webcodecs H265解码（不一定准确）；</span>
+                    <span id="wcsNotSupport264" style="color: red;display: none">不支持Webcodecs
+                        H264解码(https/localhost)；</span>
+                    <span id="wcsNotSupport" style="color: red;display: none">不支持Webcodecs
+                        H265解码(https/localhost),会自动切换成wasm解码</span>
+                </div>
+            </div>
+            <div class="input">
+                <div>
+                    当前浏览器：
+                    <span id="simdSupport" style="color: green;display: none">支持WASM SIMD解码</span>
+                    <span id="simdNotSupport" style="color: red;display: none">不支持WASM SIMD解码,会自动切换成wasm解码</span>
+                </div>
+            </div>
+            <div class="input">
+                <div><input type="checkbox" checked id="useMSE" /><span>MediaSource</span>
+                    <input type="checkbox" id="useWCS" /><span>Webcodec</span>
+                    <input type="checkbox" id="useWASM" /><span>WASM</span>
+                    <input type="checkbox" id="useSIMD" /><span>WASM(SIMD)</span> <span
+                        style="color: green">默认使用wasm解码器</span>
+                </div>
+            </div>
+            <div class="input">
+                <span>渲染标签：</span>
+                <select id="renderDom" onchange="replay()">
+                    <option value="video" selected>video</option>
+                    <option value="canvas">canvas</option>
+                </select>
+
+                <span>canvas渲染技术：</span>
+                <select id="isUseWebGPU" onchange="replay()">
+                    <option value="webgl">webgl</option>
+                    <option value="webgpu" selected>webgpu</option>
+                </select>
+                <span id="supportWebgpu"></span>
+            </div>
+
+            <div class="input">
+                <div>
+                    <input type="checkbox" checked id="isEmitSEI" /><span style="color: green">是否分析获取SEI数据</span>
+                </div>
+            </div>
+            <div class="input">
+                <div>
+                    <span>缓存时长：</span>
+                    <input placeholder="单位：秒" type="text" id="videoBuffer" style="width: 50px" value="0.2">秒
+                    <span>缓存延迟(延迟超过会触发丢帧)：</span>
+                    <input placeholder="单位：秒" type="text" id="videoBufferDelay" style="width: 50px" value="1">秒
+                    <button id="replay">重播</button>
+                </div>
+            </div>
+
+            <div class="input">
+                <div>输入URL：</div>
+                <input autocomplete="on" id="playUrl" value="ws://172.16.66.246:3009/AIH0101/H01010022.live.flv" />
+                <button id="play">播放</button>
+                <button id="pause" style="display: none">停止</button>
+            </div>
+            <div class="input" style="line-height: 30px">
+                <button id="destroy">销毁</button>
+                <span class="fps-inner"></span>
+            </div>
+        </div>
+    </div>
+
+    <script src="./demo.js"></script>
+    <script>
+        var $player = document.getElementById('play');
+        var $pause = document.getElementById('pause');
+        var $playHref = document.getElementById('playUrl');
+        var $container = document.getElementById('container');
+        var $destroy = document.getElementById('destroy');
+        var $useMSE = document.getElementById('useMSE');
+        var $useSIMD = document.getElementById('useSIMD');
+        var $useWASM = document.getElementById('useWASM');
+        var $useWCS = document.getElementById('useWCS');
+        var $videoBuffer = document.getElementById('videoBuffer');
+        var $videoBufferDelay = document.getElementById('videoBufferDelay');
+        var $replay = document.getElementById('replay');
+        var $fps = document.querySelector('.fps-inner');
+        var $renderDom = document.getElementById('renderDom');
+        var $isUseWebGPU = document.getElementById('isUseWebGPU');
+        var $isEmitSEI = document.getElementById('isEmitSEI');
+
+        var showOperateBtns = true; // 是否显示按钮
+        var forceNoOffscreen = true; //
+        var jessibuca = null;
+
+        function create() {
+            jessibuca = new JessibucaPro({
+                container: $container,
+                videoBuffer: Number($videoBuffer.value), // 缓存时长
+                videoBufferDelay: Number($videoBufferDelay.value), // 1000s
+                decoder: './js/decoder-pro.js',
+
+                isResize: false,
+                text: "",
+                loadingText: "加载中",
+                debug: false,
+                debugLevel: "debug",
+                useMSE: $useMSE.checked === true,
+                useSIMD: $useSIMD.checked === true,
+                useWCS: $useWCS.checked === true,
+                showBandwidth: showOperateBtns, // 显示网速
+                showPerformance: showOperateBtns, // 显示性能
+                operateBtns: {
+                    fullscreen: showOperateBtns,
+                    screenshot: showOperateBtns,
+                    play: showOperateBtns,
+                    audio: showOperateBtns,
+                    ptz: showOperateBtns,
+                    quality: showOperateBtns,
+                    performance: showOperateBtns,
+                },
+                timeout: 10000,
+                heartTimeoutReplayUseLastFrameShow: true,
+                audioEngine: "worklet",
+                qualityConfig: ['普清', '高清', '超清', '4K', '8K'],
+                forceNoOffscreen: forceNoOffscreen,
+                isNotMute: false,
+                heartTimeout: 10,
+                ptzClickType: 'mouseDownAndUp',
+                ptzZoomShow: true,
+                ptzMoreArrowShow: true,
+                ptzApertureShow: true,
+                ptzFocusShow: true,
+                useCanvasRender: $renderDom.value === 'canvas',
+                useWebGPU: $isUseWebGPU.value === 'webgpu',
+                controlHtml: '<div>我是 <span style="color: red">test</span>文案</div>',
+                isEmitSEI: true,
+                // audioEngine:"worklet",
+                // isFlv: true
+            },);
+
+
+            jessibuca.on('ptz', (arrow) => {
+                // console.log('ptz', arrow);
+            })
+
+            jessibuca.on('streamQualityChange', (value) => {
+                console.log('streamQualityChange', value);
+            })
+
+            jessibuca.on('timeUpdate', (value) => {
+                // console.log('timeUpdate', value);
+            })
+
+            jessibuca.on('stats', (stats) => {
+                // console.log('stats', stats);
+                $fps.textContent = `FPS: ${stats.fps} DFPS: ${stats.dfps}`
+            })
+
+            jessibuca.on('videoSEI', (value) => {
+                // console.log(`videoSEI ts is ${value.ts}, data is ${value.data}`);
+            })
+
+            let seiList = []
+            jessibuca.on('videoSEI', (value) => {
+                seiList.push(value);
+            })
+
+            jessibuca.on('currentPts', (ts) => {
+                // console.log(ts)
+
+                const seiItem = seiList.find((item) => {
+                    const diff = Math.abs(item.ts - ts);
+                    return diff <= 17
+                })
+                seiList = seiList.filter((item) => {
+                    return item.ts > ts;
+                })
+                if (seiItem?.data) {
+
+                    let pointList = []
+                    const decoder = new TextDecoder(); // 创建一个 TextDecoder 对象 
+                    const str = decoder.decode(seiItem.data)
+                    const startIndex = str.indexOf('{')
+                    const endIndex = str.lastIndexOf('}') + 1
+               
+                    const datas = str.slice(startIndex, endIndex)
+                    if (datas && datas.includes('{') && datas.includes('}')) {
+                        let d = {}
+                        try {
+                            d = JSON.parse(datas)
+                        } catch (e) {
+                            d = {}
+                        }
+                        console.log(d)
+                        Object.entries(d).forEach(([key, value]) => {
+                            Object.entries(value).forEach(item => {
+                                let [k, v] = item
+                                if (k == 'datas') {
+                                    if ('line' in v) {
+                                        Array.isArray(v.line) && v.line.forEach(el => {
+                                            pointList.push({
+                                                type: 'line',
+                                                x1: el.x1,
+                                                x2: el.x2,
+                                                y1: el.y1,
+                                                y2: el.y2,
+                                                lineWidth: 2,
+                                                color: "yellow",
+                                            })
+                                        })
+                                    }
+                                    if ('object' in v) {
+                                        Array.isArray(v.object) && v.object.forEach(el => {
+                                            if (!el.x || !el.y) return
+                                            if (el.label) {
+                                                pointList.push(...[{
+                                                    type: 'text',
+                                                    text: el.label,
+                                                    x: +el.x,
+                                                    y: el.y - 40,
+                                                    color: 'red',
+                                                    fontSize: 30
+                                                }, {
+                                                    type: 'rect',
+                                                    x: +el.x,
+                                                    y: +el.y,
+                                                    width: +el.w,
+                                                    height: +el.h, color: 'red',
+                                                }])
+                                            }
+                                        })
+                                    }
+                                }
+                            })
+                            jessibuca.addContentToCanvas(pointList)
+                        })
+                    }
+                }
+            })
+            $player.style.display = 'inline-block';
+            $pause.style.display = 'none';
+            $destroy.style.display = 'none';
+            $fps.textContent = '';
+        }
+
+
+        create();
+
+        function play() {
+            var href = $playHref.value;
+            if (href) {
+                jessibuca.play(href);
+                $player.style.display = 'none';
+                $pause.style.display = 'inline-block';
+                $destroy.style.display = 'inline-block';
+            }
+
+        const video =    document.querySelector('#container video')
+          video.addEventListener('timeupdate',function(){
+            console.log(video.currentTime)
+          })
+        }
+
+      
+
+        function replay() {
+            if (jessibuca) {
+                jessibuca.destroy().then(() => {
+                    create();
+                    play();
+                });
+            } else {
+                create();
+                play();
+            }
+        }
+
+        $replay.addEventListener('click', function () {
+            replay();
+        })
+
+        $player.addEventListener('click', function () {
+            play();
+        }, false)
+
+
+        $pause.addEventListener('click', function () {
+            $player.style.display = 'inline-block';
+            $pause.style.display = 'none';
+            $fps.textContent = '';
+            jessibuca.pause();
+        })
+
+        $destroy.addEventListener('click', function () {
+            if (jessibuca) {
+                jessibuca.destroy().then(() => {
+                    create();
+                });
+            } else {
+                create();
+            }
+
+        })
+
+        $useMSE.addEventListener('click', function () {
+            const checked = $useMSE.checked;
+            if (checked) {
+                $useSIMD.checked = false
+                $useWCS.checked = false
+                $useWASM.checked = false
+            }
+            replay();
+        })
+
+        $useSIMD.addEventListener('click', function () {
+            const checked = $useSIMD.checked;
+            if (checked) {
+                $useMSE.checked = false
+                $useWCS.checked = false
+                $useWASM.checked = false
+            }
+            replay();
+        })
+
+        $useWCS.addEventListener('click', function () {
+            const checked = $useWCS.checked;
+            if (checked) {
+                $useMSE.checked = false
+                $useSIMD.checked = false
+                $useWASM.checked = false
+            }
+            replay();
+        })
+
+        $useWASM.addEventListener('click', function () {
+            const checked = $useWASM.checked;
+            if (checked) {
+                $useMSE.checked = false
+                $useSIMD.checked = false
+                $useWCS.checked = false
+            }
+            replay();
+        })
+
+        $isEmitSEI.addEventListener('click', function () {
+            const checked = $isEmitSEI.checked;
+            jessibuca.updateIsEmitSEI($isEmitSEI.checked === true)
+
+        })
+
+    </script>
+
+</body>
+
+</html>
